@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, forwardRef } from "react"
+import { useState, useCallback, forwardRef, useEffect } from "react"
 import {
   Table,
   TableBody,
@@ -17,7 +17,13 @@ import { Textarea } from "../components/ui/textarea"
 import { Edit, Trash2, Plus } from 'lucide-react'
 import { Icons } from "../components/icons"
 import { cn } from "../lib/utils"
+import { CustomDialog } from "../components/ui/custom-dialog"
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import Select, { StylesConfig } from 'react-select'
+import type { Issue, IssueFormData } from "@/types/index"
+import { format } from 'date-fns'
+import { FeedbackModal } from "@/components/ui/feedback-modal"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
 interface PriorityOption {
   value: 'low' | 'medium' | 'high'
@@ -67,14 +73,6 @@ const priorityOptions: PriorityOption[] = [
   { value: 'high', label: 'High' },
 ]
 
-interface IssueFormData {
-  issue: string
-  date: string
-  tech: string
-  priority: string
-  notes?: string
-}
-
 interface IssueFormProps {
   onSubmit: (data: IssueFormData) => void
   initialData?: Partial<IssueFormData>
@@ -100,12 +98,12 @@ const IssueForm = forwardRef<HTMLFormElement, IssueFormProps>(({
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
-    const data = {
-      issue: formData.get('issue') as string,
-      date: formData.get('date') as string,
-      tech: formData.get('tech') as string,
+    const data: IssueFormData = {
+      title: formData.get('title') as string,
+      description: formData.get('description') as string,
+      status: initialData?.status || 'open',
       priority: selectedPriority?.value || 'medium',
-      notes: formData.get('notes') as string,
+      notes: formData.get('notes') as string || null,
     }
     onSubmit(data)
   }
@@ -113,32 +111,22 @@ const IssueForm = forwardRef<HTMLFormElement, IssueFormProps>(({
   return (
     <form ref={ref} onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-2">
-        <Label htmlFor="issue">Issue</Label>
+        <Label htmlFor="title">Title</Label>
         <Input 
-          id="issue" 
-          name="issue"
-          defaultValue={initialData?.issue}
+          id="title" 
+          name="title"
+          defaultValue={initialData?.title}
+          placeholder="Enter issue title" 
+          required 
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="description">Description</Label>
+        <Textarea 
+          id="description" 
+          name="description"
+          defaultValue={initialData?.description}
           placeholder="Enter issue description" 
-          required 
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="date">Date</Label>
-        <Input 
-          id="date" 
-          name="date"
-          type="date" 
-          defaultValue={initialData?.date}
-          required 
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="tech">Tech</Label>
-        <Input 
-          id="tech" 
-          name="tech"
-          defaultValue={initialData?.tech}
-          placeholder="Enter tech name" 
           required 
         />
       </div>
@@ -206,107 +194,390 @@ const IssueForm = forwardRef<HTMLFormElement, IssueFormProps>(({
 
 IssueForm.displayName = 'IssueForm'
 
-const issues = [
-  { id: 1, issue: "Faulty microphone", date: "2023-06-15", tech: "John Doe", status: "open", priority: "high", userId: 1 },
-  { id: 2, issue: "Broken cable", date: "2023-06-12", tech: "Jane Smith", status: "open", priority: "medium", userId: 2 },
-  { id: 3, issue: "Speaker distortion", date: "2023-06-10", tech: "John Doe", status: "closed", priority: "low", userId: 1 },
-  { id: 4, issue: "Missing power supply", date: "2023-06-08", tech: "John Doe", status: "open", priority: "high", userId: 1 },
-  { id: 5, issue: "Software glitch", date: "2023-06-05", tech: "Jane Smith", status: "closed", priority: "medium", userId: 2 },
-]
-
-const priorityColors = {
+const priorityColors: Record<'low' | 'medium' | 'high', string> = {
   low: "bg-green-500",
   medium: "bg-yellow-500",
   high: "bg-red-500",
-}
+} as const;
 
-export function IssueTable({ status }: { status: "open" | "closed" }) {
-  const [currentUserId] = useState(1)
+const PriorityLegend = () => (
+  <div className="flex items-center gap-4 mb-4">
+    <span className="text-sm text-muted-foreground">Priority:</span>
+    {Object.entries(priorityColors).map(([priority, color]) => (
+      <div key={priority} className="flex items-center gap-1">
+        <div className={`w-3 h-3 rounded-full ${color}`} />
+        <span className="text-sm capitalize">{priority}</span>
+      </div>
+    ))}
+  </div>
+);
+
+export function IssueTable({ 
+  status, 
+  showControls = false 
+}: { 
+  status: "open" | "closed"
+  showControls?: boolean 
+}) {
+  const [issues, setIssues] = useState<Issue[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingIssue, setEditingIssue] = useState<number | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [editingIssue, setEditingIssue] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false)
+  const [deletingIssueId, setDeletingIssueId] = useState<string | null>(null)
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false)
+  const [viewingIssue, setViewingIssue] = useState<Issue | null>(null)
+  const [feedbackModal, setFeedbackModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'success'
+  })
 
-  const filteredIssues = issues.filter(issue => issue.status === status)
+  const supabase = createClientComponentClient()
+
+  // Fetch current user
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setCurrentUserId(user?.id || null)
+    }
+    fetchUser()
+  }, [supabase])
+
+  // Fetch issues
+  const fetchIssues = useCallback(async () => {
+    try {
+      const { data: issuesData, error: issuesError } = await supabase
+        .from('issues')
+        .select('*')
+        .eq('status', status === 'closed' ? 'closed' : 'open')
+        .order('created_at', { ascending: false })
+      
+      if (issuesError) {
+        console.error('Supabase error:', issuesError)
+        throw issuesError
+      }
+
+      // Get the current user's email for display
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      
+      const issuesWithReporter = issuesData.map(issue => ({
+        ...issue,
+        reporter: {
+          email: issue.reported_by === currentUser?.id ? currentUser?.email : issue.reported_by,
+          full_name: issue.reported_by === currentUser?.id ? currentUser?.user_metadata?.full_name || currentUser?.email : issue.reported_by
+        }
+      }))
+      
+      setIssues(issuesWithReporter)
+    } catch (err) {
+      console.error('Error fetching issues:', err)
+      setError('Failed to load issues')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [supabase, status])
+
+  // Initial fetch
+  useEffect(() => {
+    fetchIssues()
+  }, [fetchIssues])
+
+  // Set up real-time subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('issues_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'issues',
+        },
+        () => fetchIssues()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'issues',
+        },
+        () => fetchIssues()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'issues',
+        },
+        () => fetchIssues()
+      )
+      .subscribe()
+
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [supabase, fetchIssues])
 
   const handleSubmit = useCallback(async (data: IssueFormData) => {
     setIsLoading(true)
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      console.log('Form submitted:', data)
+      // Get current user info
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      if (!currentUser) throw new Error('No user found')
+
+      if (editingIssue) {
+        const { error } = await supabase
+          .from('issues')
+          .update({
+            title: data.title,
+            description: data.description,
+            priority: data.priority,
+            notes: data.notes,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingIssue)
+
+        if (error) throw error
+        
+        await fetchIssues()
+        setIsDialogOpen(false)
+        setEditingIssue(null)
+        setFeedbackModal({
+          isOpen: true,
+          title: 'Success',
+          message: 'Issue has been updated successfully.',
+          type: 'success'
+        })
+      } else {
+        const { error } = await supabase
+          .from('issues')
+          .insert([{
+            title: data.title,
+            description: data.description,
+            status: 'open',
+            priority: data.priority,
+            reported_by: currentUser.id,
+            notes: data.notes,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }])
+
+        if (error) throw error
+        
+        await fetchIssues()
+        setIsDialogOpen(false)
+        setEditingIssue(null)
+        setFeedbackModal({
+          isOpen: true,
+          title: 'Success',
+          message: 'New issue has been added successfully.',
+          type: 'success'
+        })
+      }
+    } catch (error: any) {
+      console.error('Error saving issue:', error)
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Error',
+        message: error.message || 'Failed to save issue',
+        type: 'error'
+      })
     } finally {
       setIsLoading(false)
-      setIsDialogOpen(false)
-      setEditingIssue(null)
     }
+  }, [editingIssue, supabase, fetchIssues])
+
+  const handleDelete = useCallback(async () => {
+    if (!deletingIssueId) return
+
+    setIsLoading(true)
+    try {
+      const { error } = await supabase
+        .from('issues')
+        .delete()
+        .eq('id', deletingIssueId)
+
+      if (error) throw error
+
+      await fetchIssues()
+      setShowConfirmDelete(false)
+      setDeletingIssueId(null)
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Success',
+        message: 'Issue has been deleted successfully.',
+        type: 'success'
+      })
+    } catch (error: any) {
+      console.error('Error deleting issue:', error)
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Error',
+        message: error.message || 'Failed to delete issue',
+        type: 'error'
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }, [deletingIssueId, supabase, fetchIssues])
+
+  const handleDeleteClick = useCallback((issueId: string) => {
+    setDeletingIssueId(issueId)
+    setShowConfirmDelete(true)
   }, [])
+
+  const handleStatusChange = useCallback(async (issueId: string, newStatus: 'open' | 'closed') => {
+    try {
+      const { error } = await supabase
+        .from('issues')
+        .update({
+          status: newStatus,
+          closed_at: newStatus === 'closed' ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', issueId)
+
+      if (error) throw error
+
+      // Force refresh both tables
+      fetchIssues()
+      
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Success',
+        message: `Issue has been ${newStatus === 'closed' ? 'closed' : 'reopened'} successfully.`,
+        type: 'success'
+      })
+    } catch (error: any) {
+      console.error('Error updating issue status:', error)
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Error',
+        message: error.message || 'Failed to update issue status',
+        type: 'error'
+      })
+    }
+  }, [supabase, fetchIssues])
+
+  const currentIssue = editingIssue 
+    ? issues.find(issue => issue.id === editingIssue)
+    : undefined
 
   const handleAdd = useCallback(() => {
     setEditingIssue(null)
     setIsDialogOpen(true)
   }, [])
 
-  const handleEdit = useCallback((issueId: number) => {
+  const handleEdit = useCallback((issueId: string) => {
     setEditingIssue(issueId)
     setIsDialogOpen(true)
   }, [])
 
-  const handleCancel = useCallback(() => {
-    setIsDialogOpen(false)
-    setEditingIssue(null)
+  const handleView = useCallback((issue: Issue) => {
+    setViewingIssue(issue)
+    setIsViewModalOpen(true)
   }, [])
 
-  const currentIssue = editingIssue 
-    ? issues.find(issue => issue.id === editingIssue)
-    : undefined
+  if (isLoading) {
+    return <div className="flex justify-center p-4"><Icons.spinner className="h-6 w-4 animate-spin" /></div>
+  }
+
+  if (error) {
+    return <div className="text-red-500 text-center p-4">{error}</div>
+  }
 
   return (
-    <div>
-      <div className="flex justify-between items-center">
-        {status === "open" && (
-          <Button onClick={handleAdd} variant="orange" className="ml-auto">
+    <>
+      {showControls ? (
+        <div className="flex flex-col items-end gap-2">
+          <Button onClick={() => {
+            setEditingIssue(null)
+            setIsDialogOpen(true)
+          }} variant="orange">
             <Plus className="h-4 w-4 mr-2" />
             Add New Issue
           </Button>
-        )}
-      </div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Issue</TableHead>
-            <TableHead>Date</TableHead>
-            <TableHead>Tech</TableHead>
-            <TableHead>Priority</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filteredIssues.map((issue) => (
-            <TableRow key={issue.id}>
-              <TableCell>{issue.issue}</TableCell>
-              <TableCell>{issue.date}</TableCell>
-              <TableCell>{issue.tech}</TableCell>
-              <TableCell>
-                <div className={`w-3 h-3 rounded-full ${priorityColors[issue.priority as keyof typeof priorityColors]}`}></div>
-              </TableCell>
-              <TableCell className="text-right">
-                {issue.userId === currentUserId && (
-                  <div className="flex justify-end space-x-2">
-                    <Button variant="outline" size="sm" onClick={() => handleEdit(issue.id)}>
-                      <Edit className="h-4 w-4 mr-1" />
-                      Edit
+          <PriorityLegend />
+        </div>
+      ) : (
+        <div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Title</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead>Reported By</TableHead>
+                <TableHead>Details</TableHead>
+                <TableHead className="text-center">Priority</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {issues.map((issue) => (
+                <TableRow key={issue.id}>
+                  <TableCell>{issue.title}</TableCell>
+                  <TableCell>
+                    {format(new Date(issue.created_at), "MMMM d, yyyy")}
+                  </TableCell>
+                  <TableCell>
+                    {issue.reporter?.email || issue.reported_by}
+                  </TableCell>
+                  <TableCell>
+                    <Button 
+                      variant="link" 
+                      className="p-0 h-auto font-normal text-blue-200 hover:text-blue-100"
+                      onClick={() => handleView(issue)}
+                    >
+                      View Issue
                     </Button>
-                    <Button variant="destructive" size="sm">
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </Button>
-                  </div>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <div className="flex justify-center">
+                      <div className={`w-3 h-3 rounded-full ${priorityColors[issue.priority]}`} />
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {issue.reported_by === currentUserId && (
+                      <div className="flex justify-end space-x-2">
+                        <Button variant="outline" size="sm" onClick={() => handleEdit(issue.id)}>
+                          <Edit className="h-4 w-4 mr-1" />
+                          Edit
+                        </Button>
+                        <Button 
+                          variant="destructive" 
+                          size="sm" 
+                          onClick={() => handleDeleteClick(issue.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                        <Button
+                          variant={status === 'open' ? 'destructive' : 'outline'}
+                          size="sm"
+                          onClick={() => handleStatusChange(issue.id, status === 'open' ? 'closed' : 'open')}
+                        >
+                          {status === 'open' ? 'Close' : 'Reopen'}
+                        </Button>
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
@@ -317,11 +588,85 @@ export function IssueTable({ status }: { status: "open" | "closed" }) {
             onSubmit={handleSubmit}
             initialData={currentIssue}
             isLoading={isLoading}
-            onCancel={handleCancel}
+            onCancel={() => setIsDialogOpen(false)}
           />
         </DialogContent>
       </Dialog>
-    </div>
+
+      <Dialog open={isViewModalOpen} onOpenChange={setIsViewModalOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-gradient-orange">
+              Issue Details
+            </DialogTitle>
+          </DialogHeader>
+          {viewingIssue && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h3 className="text-sm font-medium text-muted-foreground mb-1">Title</h3>
+                  <p className="text-lg">{viewingIssue.title}</p>
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium text-muted-foreground mb-1">Priority</h3>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded-full ${priorityColors[viewingIssue.priority]}`} />
+                    <span className="text-lg capitalize">{viewingIssue.priority}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-1">Description</h3>
+                <p className="text-lg">{viewingIssue.description}</p>
+              </div>
+
+              {viewingIssue.notes && (
+                <div>
+                  <h3 className="text-sm font-medium text-muted-foreground mb-1">Notes</h3>
+                  <div className="bg-card-gradient rounded-lg p-4">
+                    <p className="whitespace-pre-wrap">{viewingIssue.notes}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
+                <div>
+                  <p>Created: {format(new Date(viewingIssue.created_at), "MMMM d, yyyy 'at' h:mm a")}</p>
+                </div>
+                <div>
+                  <p>Updated: {format(new Date(viewingIssue.updated_at), "MMMM d, yyyy 'at' h:mm a")}</p>
+                </div>
+                {viewingIssue.closed_at && (
+                  <div className="col-span-2">
+                    <p>Closed: {format(new Date(viewingIssue.closed_at), "MMMM d, yyyy 'at' h:mm a")}</p>
+                  </div>
+                )}
+                <div className="col-span-2">
+                  <p>Reported By: {viewingIssue.reporter?.email || viewingIssue.reported_by}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        isOpen={showConfirmDelete}
+        onClose={() => setShowConfirmDelete(false)}
+        title="Confirm Delete"
+        message="Are you sure you want to delete this issue? This action cannot be undone."
+        onConfirm={handleDelete}
+      />
+
+      <FeedbackModal
+        isOpen={feedbackModal.isOpen}
+        onClose={() => setFeedbackModal(prev => ({ ...prev, isOpen: false }))}
+        title={feedbackModal.title}
+        message={feedbackModal.message}
+        type={feedbackModal.type as 'success' | 'error'}
+      />
+    </>
   )
 }
 

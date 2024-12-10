@@ -35,7 +35,6 @@ const navigation = [
   { name: "Bands", href: "/bands", icon: Music2 },
   { name: "Schedule", href: "/schedule", icon: Calendar },
   { name: "Gig Log", href: "/gig-log", icon: Music2 },
-  { name: "Inventory", href: "/inventory", icon: PackageSearch },
   { name: "Issue Tracking", href: "/issue-tracking", icon: AlertCircle },
 ]
 

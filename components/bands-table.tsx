@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, forwardRef } from "react"
+import { useState, useCallback, forwardRef, useEffect } from "react"
 import {
   Table,
   TableBody,
@@ -17,20 +17,16 @@ import { Textarea } from "../components/ui/textarea"
 import { Edit, Trash2, Plus } from 'lucide-react'
 import { Icons } from "../components/icons"
 import { cn } from "../lib/utils"
-
-interface BandFormData {
-  name: string
-  homeLocation: string
-  members: number
-  lastPlayed: string
-  lastTech: string
-  notes: string
-  inputLists: string
-}
+import { CustomDialog } from "../components/ui/custom-dialog"
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { format } from "date-fns"
+import type { Band, BandFormData } from "@/types/index"
+import { FeedbackModal } from "@/components/ui/feedback-modal"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
 interface BandFormProps {
   onSubmit: (data: BandFormData) => void
-  initialData?: Partial<BandFormData>
+  initialData?: BandFormData
   isLoading: boolean
   onCancel: () => void
 }
@@ -46,12 +42,11 @@ const BandForm = forwardRef<HTMLFormElement, BandFormProps>(({
     const formData = new FormData(e.currentTarget)
     const data = {
       name: formData.get('name') as string,
-      homeLocation: formData.get('homeLocation') as string,
+      home_location: formData.get('home_location') as string,
       members: Number(formData.get('members')),
-      lastPlayed: formData.get('lastPlayed') as string,
-      lastTech: formData.get('lastTech') as string,
+      last_played: formData.get('last_played') as string,
       notes: formData.get('notes') as string,
-      inputLists: formData.get('inputLists') as string,
+      input_lists: formData.get('input_lists') as string,
     }
     onSubmit(data)
   }
@@ -69,11 +64,11 @@ const BandForm = forwardRef<HTMLFormElement, BandFormProps>(({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="homeLocation">Home Location</Label>
+        <Label htmlFor="home_location">Home Location</Label>
         <Input 
-          id="homeLocation" 
-          name="homeLocation"
-          defaultValue={initialData?.homeLocation}
+          id="home_location" 
+          name="home_location"
+          defaultValue={initialData?.home_location}
           placeholder="Enter home location" 
           required 
         />
@@ -90,22 +85,12 @@ const BandForm = forwardRef<HTMLFormElement, BandFormProps>(({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="lastPlayed">Last Played</Label>
+        <Label htmlFor="last_played">Last Played</Label>
         <Input 
-          id="lastPlayed" 
-          name="lastPlayed"
+          id="last_played" 
+          name="last_played"
           type="date" 
-          defaultValue={initialData?.lastPlayed}
-          required 
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="lastTech">Last Tech</Label>
-        <Input 
-          id="lastTech" 
-          name="lastTech"
-          defaultValue={initialData?.lastTech}
-          placeholder="Enter last tech name" 
+          defaultValue={initialData?.last_played}
           required 
         />
       </div>
@@ -120,11 +105,11 @@ const BandForm = forwardRef<HTMLFormElement, BandFormProps>(({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="inputLists">Input Lists</Label>
+        <Label htmlFor="input_lists">Input Lists</Label>
         <Textarea 
-          id="inputLists" 
-          name="inputLists"
-          defaultValue={initialData?.inputLists}
+          id="input_lists" 
+          name="input_lists"
+          defaultValue={initialData?.input_lists}
           placeholder="Enter band's instrument input criteria" 
           className="h-48" 
         />
@@ -158,31 +143,165 @@ const BandForm = forwardRef<HTMLFormElement, BandFormProps>(({
 
 BandForm.displayName = 'BandForm'
 
-const bands = [
-  { id: 1, name: "The Rockers", homeLocation: "New York, NY", members: 4, lastPlayed: "2023-06-15", lastTech: "John Doe", userId: 1 },
-  { id: 2, name: "Jazz Ensemble", homeLocation: "Chicago, IL", members: 5, lastPlayed: "2023-06-12", lastTech: "Jane Smith", userId: 2 },
-  { id: 3, name: "Acoustic Trio", homeLocation: "Nashville, TN", members: 3, lastPlayed: "2023-06-10", lastTech: "John Doe", userId: 1 },
-  { id: 4, name: "Electronic Beats", homeLocation: "Los Angeles, CA", members: 2, lastPlayed: "2023-06-08", lastTech: "John Doe", userId: 1 },
-  { id: 5, name: "Classical Orchestra", homeLocation: "Boston, MA", members: 40, lastPlayed: "2023-06-05", lastTech: "Jane Smith", userId: 2 },
-]
-
 export function BandsTable() {
-  const [currentUserId] = useState(1)
+  const [bands, setBands] = useState<Band[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingBand, setEditingBand] = useState<number | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [editingBand, setEditingBand] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false)
+  const [deletingBandId, setDeletingBandId] = useState<string | null>(null)
+  const [feedbackModal, setFeedbackModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'success'
+  });
+  
+  const supabase = createClientComponentClient()
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setCurrentUserId(user?.id || null)
+    }
+    fetchUser()
+  }, [supabase])
+
+  const fetchBands = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('bands')
+        .select('*')
+        .order('name')
+      
+      if (error) throw error
+      
+      setBands(data || [])
+    } catch (err) {
+      console.error('Error fetching bands:', err)
+      setError('Failed to load bands')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [supabase])
+
+  useEffect(() => {
+    fetchBands()
+  }, [fetchBands])
 
   const handleSubmit = useCallback(async (data: BandFormData) => {
     setIsLoading(true)
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      console.log('Form submitted:', data)
+      if (editingBand) {
+        const { error } = await supabase
+          .from('bands')
+          .update({
+            name: data.name,
+            home_location: data.home_location,
+            members: data.members,
+            last_played: data.last_played || null,
+            notes: data.notes || null,
+            input_lists: data.input_lists || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingBand)
+
+        if (error) throw error
+        
+        await fetchBands()
+        setIsDialogOpen(false)
+        setEditingBand(null)
+        setFeedbackModal({
+          isOpen: true,
+          title: 'Success',
+          message: 'Band has been updated successfully.',
+          type: 'success'
+        })
+      } else {
+        const { error } = await supabase
+          .from('bands')
+          .insert([{
+            name: data.name,
+            home_location: data.home_location,
+            members: data.members,
+            last_played: data.last_played || null,
+            notes: data.notes || null,
+            input_lists: data.input_lists || null,
+            created_by: currentUserId,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }])
+
+        if (error) throw error
+
+        await fetchBands()
+        setIsDialogOpen(false)
+        setEditingBand(null)
+        setFeedbackModal({
+          isOpen: true,
+          title: 'Success', 
+          message: 'New band has been added successfully.',
+          type: 'success'
+        })
+      }
+    } catch (err: any) {
+      console.error('Error saving band:', err)
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Error',
+        message: err.message || 'Failed to save band',
+        type: 'error'
+      })
     } finally {
       setIsLoading(false)
-      setIsDialogOpen(false)
-      setEditingBand(null)
     }
+  }, [editingBand, currentUserId, supabase, fetchBands])
+
+  const handleDelete = useCallback(async () => {
+    if (!deletingBandId) return
+
+    setIsLoading(true)
+    try {
+      const { error } = await supabase
+        .from('bands')
+        .delete()
+        .eq('id', deletingBandId)
+
+      if (error) throw error
+
+      await fetchBands()
+      setShowConfirmDelete(false)
+      setDeletingBandId(null)
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Success',
+        message: 'Band has been deleted successfully.',
+        type: 'success'
+      })
+    } catch (err) {
+      console.error('Error deleting band:', err)
+      setError('Failed to delete band')
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to delete band',
+        type: 'error'
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }, [deletingBandId, supabase, fetchBands])
+
+  const handleDeleteClick = useCallback((bandId: string) => {
+    setDeletingBandId(bandId)
+    setShowConfirmDelete(true)
   }, [])
 
   const handleAdd = useCallback(() => {
@@ -190,19 +309,22 @@ export function BandsTable() {
     setIsDialogOpen(true)
   }, [])
 
-  const handleEdit = useCallback((bandId: number) => {
+  const handleEdit = useCallback((bandId: string) => {
     setEditingBand(bandId)
     setIsDialogOpen(true)
-  }, [])
-
-  const handleCancel = useCallback(() => {
-    setIsDialogOpen(false)
-    setEditingBand(null)
   }, [])
 
   const currentBand = editingBand 
     ? bands.find(band => band.id === editingBand)
     : undefined
+
+  if (isLoading) {
+    return <div className="flex justify-center p-4"><Icons.spinner className="h-6 w-6 animate-spin" /></div>
+  }
+
+  if (error) {
+    return <div className="text-red-500 text-center p-4">{error}</div>
+  }
 
   return (
     <div>
@@ -219,7 +341,6 @@ export function BandsTable() {
             <TableHead>Home Location</TableHead>
             <TableHead># of Members</TableHead>
             <TableHead>Last Played</TableHead>
-            <TableHead>Last Tech</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -227,18 +348,21 @@ export function BandsTable() {
           {bands.map((band) => (
             <TableRow key={band.id}>
               <TableCell>{band.name}</TableCell>
-              <TableCell>{band.homeLocation}</TableCell>
+              <TableCell>{band.home_location}</TableCell>
               <TableCell>{band.members}</TableCell>
-              <TableCell>{band.lastPlayed}</TableCell>
-              <TableCell>{band.lastTech}</TableCell>
+              <TableCell>{band.last_played}</TableCell>
               <TableCell className="text-right">
-                {band.userId === currentUserId && (
+                {band.created_by === currentUserId && (
                   <div className="flex justify-end space-x-2">
                     <Button variant="outline" size="sm" onClick={() => handleEdit(band.id)}>
                       <Edit className="h-4 w-4 mr-1" />
                       Edit
                     </Button>
-                    <Button variant="destructive" size="sm">
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      onClick={() => handleDeleteClick(band.id)}
+                    >
                       <Trash2 className="h-4 w-4 mr-1" />
                       Delete
                     </Button>
@@ -259,10 +383,26 @@ export function BandsTable() {
             onSubmit={handleSubmit}
             initialData={currentBand}
             isLoading={isLoading}
-            onCancel={handleCancel}
+            onCancel={() => setIsDialogOpen(false)}
           />
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        isOpen={showConfirmDelete}
+        onClose={() => setShowConfirmDelete(false)}
+        title="Confirm Delete"
+        message="Are you sure you want to delete this band? This action cannot be undone."
+        onConfirm={handleDelete}
+      />
+
+      <FeedbackModal
+        isOpen={feedbackModal.isOpen}
+        onClose={() => setFeedbackModal(prev => ({ ...prev, isOpen: false }))}
+        title={feedbackModal.title}
+        message={feedbackModal.message}
+        type={feedbackModal.type as 'success' | 'error'}
+      />
     </div>
   )
 }

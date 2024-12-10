@@ -81,13 +81,13 @@ export default function ProfilePage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Email (Disabled)</Label>
               <Input
                 id="email"
                 type="email"
                 value={user?.email || ""}
                 disabled
-                className="bg-gray-100"
+                className="bg-slate-700 text-white"
               />
             </div>
             <Button 

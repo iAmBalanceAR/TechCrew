@@ -40,14 +40,14 @@ export default function DashboardPage() {
             <BandListings />
           </CardContent>
         </Card>
-        <Card className="bg-card-gradient text-white">
+        {/* <Card className="bg-card-gradient text-white">
           <CardHeader>
             <CardTitle>Inventory Overview</CardTitle>
           </CardHeader>
           <CardContent>
             <InventoryOverview />
           </CardContent>
-        </Card>
+        </Card> */}
         <Card className="bg-card-gradient text-white">
           <CardHeader>
             <CardTitle>Recent Issues</CardTitle>
