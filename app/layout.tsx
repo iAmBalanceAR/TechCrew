@@ -4,7 +4,7 @@ import { Inter } from "next/font/google"
 import { createServerSupabaseClient } from "@/lib/supabase-server"
 import { SideNav } from "@/components/side-nav"
 import { ThemeProvider } from "@/components/theme-provider"
-
+import { Footer } from "@/components/footer"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
@@ -36,6 +36,7 @@ export default async function RootLayout({
               <main className="flex-1 pl-64">
                 <div className="container mx-auto px-6 py-8">
                   {children}
+                  <Footer />
                 </div>
               </main>
             </div>

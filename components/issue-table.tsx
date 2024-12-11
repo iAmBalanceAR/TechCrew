@@ -17,13 +17,13 @@ import { Textarea } from "../components/ui/textarea"
 import { Edit, Trash2, Plus } from 'lucide-react'
 import { Icons } from "../components/icons"
 import { cn } from "../lib/utils"
-import { CustomDialog } from "../components/ui/custom-dialog"
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import Select, { StylesConfig } from 'react-select'
 import type { Issue, IssueFormData } from "@/types/index"
 import { format } from 'date-fns'
 import { FeedbackModal } from "@/components/ui/feedback-modal"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { formatLocalDate } from "@/lib/utils"
 
 interface PriorityOption {
   value: 'low' | 'medium' | 'high'
@@ -634,13 +634,11 @@ export function IssueTable({
                 <div>
                   <p>Created: {format(new Date(viewingIssue.created_at), "MMMM d, yyyy 'at' h:mm a")}</p>
                 </div>
-                <div>
+                {viewingIssue.updated_at && (
                   <p>Updated: {format(new Date(viewingIssue.updated_at), "MMMM d, yyyy 'at' h:mm a")}</p>
-                </div>
+                )}
                 {viewingIssue.closed_at && (
-                  <div className="col-span-2">
-                    <p>Closed: {format(new Date(viewingIssue.closed_at), "MMMM d, yyyy 'at' h:mm a")}</p>
-                  </div>
+                  <p>Closed: {format(new Date(viewingIssue.closed_at), "MMMM d, yyyy 'at' h:mm a")}</p>
                 )}
                 <div className="col-span-2">
                   <p>Reported By: {viewingIssue.reporter?.email || viewingIssue.reported_by}</p>

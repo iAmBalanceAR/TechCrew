@@ -19,10 +19,13 @@ import { Icons } from "../components/icons"
 import { cn } from "../lib/utils"
 import { CustomDialog } from "../components/ui/custom-dialog"
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-import { format } from "date-fns"
+import { formatInTimeZone } from "date-fns-tz"
 import type { Schedule, ScheduleFormData } from "@/types/index"
 import { FeedbackModal } from "@/components/ui/feedback-modal"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { format } from "date-fns"
+import { parseISO, addDays } from "date-fns"
+import { formatLocalDate } from "@/lib/utils"
 
 interface ScheduleFormProps {
   onSubmit: (data: ScheduleFormData) => void
@@ -56,8 +59,9 @@ const ScheduleForm = forwardRef<HTMLFormElement, ScheduleFormProps>(({
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
+    const dateStr = formData.get('date') as string
     const data: ScheduleFormData = {
-      date: formData.get('date') as string,
+      date: dateStr,
       show_time: formData.get('show_time') as string,
       tech_name: formData.get('tech_name') as string || null,
       is_band_override: isBandOverride
@@ -428,9 +432,13 @@ export function ScheduleTable() {
         <TableBody>
           {schedules.map((schedule) => (
             <TableRow key={schedule.id}>
-              <TableCell>{format(new Date(schedule.date), "MMMM d, yyyy")}</TableCell>
+              <TableCell>
+                {format(formatLocalDate(schedule.date), "MMMM d, yyyy")}
+              </TableCell>
               <TableCell>{schedule.bands?.name || schedule.band_name}</TableCell>
-              <TableCell>{format(new Date(`2000-01-01T${schedule.show_time}`), "h:mm a")}</TableCell>
+              <TableCell>
+                {format(new Date(`2000-01-01T${schedule.show_time}`), "h:mm a")}
+              </TableCell>
               <TableCell>{schedule.tech_name}</TableCell>
               <TableCell className="text-right">
                 {schedule.tech_id === currentUserId && (

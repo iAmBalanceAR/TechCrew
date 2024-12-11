@@ -1,29 +1,62 @@
 "use client"
 
-import { SetStateAction, useState } from "react"
+import { useState, useEffect, SetStateAction } from "react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-
-const bands = [
-  { id: 1, name: "The Rockers", genre: "Rock", members: 4 },
-  { id: 2, name: "Jazz Ensemble", genre: "Jazz", members: 5 },
-  { id: 3, name: "Acoustic Trio", genre: "Acoustic", members: 3 },
-  { id: 4, name: "Electronic Beats", genre: "Electronic", members: 2 },
-  { id: 5, name: "Classical Orchestra", genre: "Classical", members: 40 },
-  { id: 6, name: "Rock Legends", genre: "Rock", members: 5 },
-  { id: 7, name: "Pop Sensations", genre: "Pop", members: 4 },
-  { id: 8, name: "Indie Rockers", genre: "Indie", members: 4 },
-  { id: 9, name: "Folk Troubadours", genre: "Folk", members: 3 },
-  { id: 10, name: "Metal Mayhem", genre: "Metal", members: 5 },
-]
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { Icons } from "@/components/icons"
+import Link from "next/link"
+interface Band {
+  id: string
+  name: string
+  home_location: string
+  members: number
+}
 
 export function BandListings() {
+  const [bands, setBands] = useState<Band[]>([])
   const [searchTerm, setSearchTerm] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const supabase = createClientComponentClient()
+
+  useEffect(() => {
+    async function fetchBands() {
+      try {
+        const { data, error } = await supabase
+          .from('bands')
+          .select('id, name, home_location, members')
+          .order('name')
+
+        if (error) throw error
+        setBands(data || [])
+      } catch (err) {
+        console.error('Error fetching bands:', err)
+        setError('Failed to load bands')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchBands()
+  }, [supabase])
 
   const filteredBands = bands.filter(band =>
     band.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    band.genre.toLowerCase().includes(searchTerm.toLowerCase())
+    band.home_location.toLowerCase().includes(searchTerm.toLowerCase())
   )
+
+  if (isLoading) {
+    return <div className="flex justify-center p-4"><Icons.spinner className="h-6 w-6 animate-spin" /></div>
+  }
+
+  if (error) {
+    return <div className="text-red-500 text-center p-4">{error}</div>
+  }
+
+  if (bands.length === 0) {
+    return <div className="text-center p-4 text-white/70">No bands available</div>
+  }
 
   return (
     <div className="space-y-4">
@@ -39,7 +72,7 @@ export function BandListings() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Genre</TableHead>
+                <TableHead>Location</TableHead>
                 <TableHead>Members</TableHead>
               </TableRow>
             </TableHeader>
@@ -49,13 +82,21 @@ export function BandListings() {
                 .map((band) => (
                   <TableRow key={band.id}>
                     <TableCell>{band.name}</TableCell>
-                    <TableCell>{band.genre}</TableCell>
+                    <TableCell>{band.home_location}</TableCell>
                     <TableCell>{band.members}</TableCell>
                   </TableRow>
                 ))}
             </TableBody>
           </Table>
         ))}
+      </div>
+      <div className="flex justify-end">
+        <Link 
+          href="/bands" 
+          className="text-sm text-blue-200 hover:text-blue-100 hover:underline"
+        >
+          View All
+        </Link>
       </div>
     </div>
   )

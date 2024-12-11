@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { UpcomingEvents } from "@/components/upcoming-events"
 import { RecentGigLogs } from "@/components/recent-gig-logs"
 import { BandListings } from "@/components/band-listings"
-import { InventoryOverview } from "@/components/inventory-overview"
+// import { InventoryOverview } from "@/components/inventory-overview"
 import { RecentIssues } from "@/components/recent-issues"
 
 export default function DashboardPage() {

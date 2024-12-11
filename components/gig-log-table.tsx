@@ -17,13 +17,13 @@ import { Textarea } from "../components/ui/textarea"
 import { Edit, Trash2, Plus, Eye } from 'lucide-react'
 import { Icons } from "../components/icons"
 import { cn } from "../lib/utils"
-import { CustomDialog } from "../components/ui/custom-dialog"
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
 import { FeedbackModal } from "@/components/ui/feedback-modal"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { formatLocalDate } from "@/lib/utils"
 
 // Types based on our Supabase schema
 export interface GigLog {
@@ -413,7 +413,7 @@ export function GigLogTable() {
         <TableBody>
           {gigLogs.map((gig) => (
             <TableRow key={gig.id}>
-              <TableCell>{format(new Date(gig.date), "MMMM d, yyyy")}</TableCell>
+              <TableCell>{format(formatLocalDate(gig.date), "MMMM d, yyyy")}</TableCell>
               <TableCell>{gig.bands.name}</TableCell>
               <TableCell>{gig.venue}</TableCell>
               <TableCell>
@@ -490,7 +490,7 @@ export function GigLogTable() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground mb-1">Date</h3>
-                  <p className="text-lg">{format(new Date(viewingGig.date), "MMMM d, yyyy")}</p>
+                  <p className="text-lg">{format(formatLocalDate(viewingGig.date), "MMMM d, yyyy")}</p>
                 </div>
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground mb-1">Band</h3>
@@ -517,7 +517,9 @@ export function GigLogTable() {
                   <p>Created: {format(new Date(viewingGig.created_at), "MMM d, yyyy 'at' h:mm a")}</p>
                 </div>
                 <div>
-                  <p>Updated: {format(new Date(viewingGig.updated_at), "MMM d, yyyy 'at' h:mm a")}</p>
+                  {viewingGig.updated_at && (
+                    <p>Updated: {format(new Date(viewingGig.updated_at), "MMM d, yyyy 'at' h:mm a")}</p>
+                  )}
                 </div>
               </div>
             </div>

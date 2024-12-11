@@ -285,13 +285,12 @@ export function BandsTable() {
         message: 'Band has been deleted successfully.',
         type: 'success'
       })
-    } catch (err) {
-      console.error('Error deleting band:', err)
-      setError('Failed to delete band')
+    } catch (error: any) {
+      console.error('Error deleting band:', error)
       setFeedbackModal({
         isOpen: true,
         title: 'Error',
-        message: 'Failed to delete band',
+        message: error.message || 'Failed to delete band',
         type: 'error'
       })
     } finally {
