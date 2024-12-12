@@ -1,10 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { Icons } from "@/components/icons"
+import Link from "next/link"
 
 interface Issue {
   id: string
@@ -127,36 +127,38 @@ export function RecentIssues() {
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Issue</TableHead>
-          <TableHead>Priority</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Reported By</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+    <div className="space-y-4">
+      <div className="space-y-3">
         {issues.map((issue) => (
-          <TableRow key={issue.id}>
-            <TableCell>{issue.title}</TableCell>
-            <TableCell>
-              <Badge variant={getPriorityVariant(issue.priority)}>
-                {issue.priority}
-              </Badge>
-            </TableCell>
-            <TableCell>
-              <Badge variant={getStatusVariant(issue.status)}>
-                {issue.status.replace('_', ' ')}
-              </Badge>
-            </TableCell>
-            <TableCell>
-              {issue.reporter?.email || issue.reported_by}
-            </TableCell>
-          </TableRow>
+          <div key={issue.id} className="bg-black/20 rounded-lg p-3 space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1">
+                <h3 className="font-medium text-sm line-clamp-1">{issue.title}</h3>
+                <p className="text-xs text-white/70">
+                  {issue.reporter?.email || issue.reported_by}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Badge variant={getPriorityVariant(issue.priority)} className="text-xs">
+                  {issue.priority}
+                </Badge>
+                <Badge variant={getStatusVariant(issue.status)} className="text-xs">
+                  {issue.status.replace('_', ' ')}
+                </Badge>
+              </div>
+            </div>
+          </div>
         ))}
-      </TableBody>
-    </Table>
+      </div>
+      <div className="flex justify-end">
+        <Link 
+          href="/issue-tracking" 
+          className="text-sm text-blue-200 hover:text-blue-100 hover:underline"
+        >
+          View All
+        </Link>
+      </div>
+    </div>
   )
 }
 

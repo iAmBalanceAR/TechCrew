@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, forwardRef, useEffect } from "react"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import {
   Table,
   TableBody,
@@ -20,22 +21,49 @@ import { cn } from "../lib/utils"
 import { CustomDialog } from "../components/ui/custom-dialog"
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { formatInTimeZone } from "date-fns-tz"
-import type { Schedule, ScheduleFormData } from "@/types/index"
 import { FeedbackModal } from "@/components/ui/feedback-modal"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { format } from "date-fns"
 import { parseISO, addDays } from "date-fns"
 import { formatLocalDate } from "@/lib/utils"
 
+interface ScheduleFormData {
+  date: string
+  show_time: string
+  tech_name: string | null
+  band_id?: string | null
+  band_name?: string | null
+  is_band_override: boolean
+}
+
+interface Schedule {
+  id: string
+  date: string
+  band_id: string | null
+  band_name: string | null
+  show_time: string
+  tech_name: string | null
+  tech_id: string | null
+  is_band_override: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+  bands?: {
+    name: string
+  } | null
+}
+
 interface ScheduleFormProps {
   onSubmit: (data: ScheduleFormData) => void
   initialData?: Partial<ScheduleFormData>
+  isLoading: boolean
   onCancel: () => void
 }
 
 const ScheduleForm = forwardRef<HTMLFormElement, ScheduleFormProps>(({ 
   onSubmit, 
   initialData, 
+  isLoading, 
   onCancel 
 }, ref) => {
   const [bands, setBands] = useState<{ id: string, name: string }[]>([])
@@ -178,6 +206,57 @@ const ScheduleForm = forwardRef<HTMLFormElement, ScheduleFormProps>(({
 
 ScheduleForm.displayName = 'ScheduleForm'
 
+// Add ScheduleCard component for mobile view
+function ScheduleCard({ schedule, onEdit, onDelete }: {
+  schedule: Schedule
+  onEdit: (id: string) => void
+  onDelete: (id: string) => void
+}) {
+  return (
+    <div className="bg-card rounded-lg p-4 space-y-4 border border-gray-800">
+      <div className="flex justify-between items-start">
+        <div>
+          <h3 className="text-lg font-semibold">
+            {schedule.is_band_override ? schedule.band_name : schedule.bands?.name}
+          </h3>
+          <p className="text-sm text-gray-400">
+            {format(parseISO(schedule.date), 'PPP')}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onEdit(schedule.id)}
+            className="h-8 w-8"
+          >
+            <Edit className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onDelete(schedule.id)}
+            className="h-8 w-8 text-red-500 hover:text-red-600"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        <div>
+          <p className="text-gray-400">Show Time</p>
+          <p>{schedule.show_time}</p>
+        </div>
+        <div>
+          <p className="text-gray-400">Tech Working</p>
+          <p>{schedule.tech_name || 'Not assigned'}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function ScheduleTable() {
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -200,6 +279,7 @@ export function ScheduleTable() {
   })
   const [userEmails, setUserEmails] = useState<Record<string, string>>({});
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+  const isDesktop = useMediaQuery("(min-width: 768px)")
 
   const supabase = createClientComponentClient()
 
@@ -250,95 +330,66 @@ export function ScheduleTable() {
   }, [fetchSchedules])
 
   const handleSubmit = useCallback(async (data: ScheduleFormData) => {
-    console.log('Submitting schedule with data:', data);
-    console.log('Current user ID:', currentUserId);
     setIsLoading(true)
     try {
       if (editingSchedule) {
-        console.log('Updating existing schedule:', editingSchedule);
+        const scheduleData = {
+          date: data.date,
+          show_time: data.show_time,
+          tech_name: data.tech_name,
+          band_id: data.is_band_override ? null : data.band_id,
+          band_name: data.is_band_override ? data.band_name : null,
+          is_band_override: data.is_band_override,
+          updated_at: new Date().toISOString()
+        }
+
         const { error } = await supabase
           .from('schedules')
-          .update({
-            date: data.date,
-            band_id: data.is_band_override ? null : data.band_id,
-            band_name: data.is_band_override ? data.band_name : null,
-            show_time: data.show_time,
-            tech_name: data.tech_name,
-            updated_at: new Date().toISOString()
-          })
+          .update(scheduleData)
           .eq('id', editingSchedule)
 
         if (error) throw error
-        
-        await fetchSchedules()
-        setIsDialogOpen(false)
-        setEditingSchedule(null)
-        setFeedbackModal({
-          isOpen: true,
-          title: 'Success',
-          message: 'Schedule has been updated successfully.',
-          type: 'success'
-        })
       } else {
-        const { data: responseData, error } = await supabase
-          .from('schedules')
-          .insert([{
-            date: data.date,
-            band_id: data.is_band_override ? null : data.band_id,
-            band_name: data.is_band_override ? data.band_name : null,
-            show_time: data.show_time,
-            tech_name: data.tech_name,
-            tech_id: currentUserId,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }])
-          .select()
-
-        if (error) {
-          console.error('Supabase insert error:', {
-            error,
-            rawError: JSON.stringify(error),
-            data: {
-              date: data.date,
-              band_id: data.is_band_override ? null : data.band_id,
-              band_name: data.is_band_override ? data.band_name : null,
-              show_time: data.show_time,
-              tech_name: data.tech_name,
-              tech_id: currentUserId,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            }
-          });
-          throw error;
+        const scheduleData = {
+          date: data.date,
+          show_time: data.show_time,
+          tech_name: data.tech_name,
+          tech_id: currentUserId,
+          band_id: data.is_band_override ? null : data.band_id,
+          band_name: data.is_band_override ? data.band_name : null,
+          is_band_override: data.is_band_override,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         }
-        
-        console.log('Insert successful:', responseData);
-        await fetchSchedules()
-        setIsDialogOpen(false)
-        setEditingSchedule(null)
-        setFeedbackModal({
-          isOpen: true,
-          title: 'Success',
-          message: 'New schedule has been added successfully.',
-          type: 'success'
-        })
+
+        const { error } = await supabase
+          .from('schedules')
+          .insert([scheduleData])
+
+        if (error) throw error
       }
-    } catch (error: any) {
-      console.error('Error saving schedule:', {
-        error,
-        rawError: JSON.stringify(error),
-        stack: error.stack
-      });
+
+      await fetchSchedules()
+      setIsDialogOpen(false)
+      setEditingSchedule(null)
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Success',
+        message: editingSchedule ? 'Schedule updated successfully.' : 'Schedule created successfully.',
+        type: 'success'
+      })
+    } catch (err) {
+      console.error('Error saving schedule:', err)
       setFeedbackModal({
         isOpen: true,
         title: 'Error',
-        message: error.message || 'Failed to save schedule. Please check the console for more details.',
+        message: 'Failed to save schedule. Please try again.',
         type: 'error'
       })
     } finally {
       setIsLoading(false)
     }
-  }, [editingSchedule, currentUserId, supabase, fetchSchedules])
+  }, [supabase, editingSchedule, currentUserId, fetchSchedules])
 
   const handleDelete = useCallback(async () => {
     if (!deletingScheduleId) return
@@ -411,69 +462,118 @@ export function ScheduleTable() {
   }
 
   return (
-    <div>
-      <div className="flex justify-end mb-4">
-        <Button onClick={handleAdd} variant="orange">
-          <Plus className="h-4 w-4 mr-2" />
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <Button
+          onClick={() => {
+            setEditingSchedule(null)
+            setIsDialogOpen(true)
+          }}
+          className="bg-orange-600 hover:bg-orange-500 text-white"
+        >
+          <Plus className="mr-2 h-4 w-4" />
           Add New Schedule
         </Button>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Band</TableHead>
-            <TableHead>Show Time</TableHead>
-            <TableHead>Tech Working</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+      {isLoading ? (
+        <div className="flex justify-center p-8">
+          <Icons.spinner className="h-6 w-6 animate-spin" />
+        </div>
+      ) : error ? (
+        <div className="text-center text-red-500 p-4">{error}</div>
+      ) : schedules.length === 0 ? (
+        <div className="text-center text-gray-400 p-8">
+          No schedules found. Add your first schedule!
+        </div>
+      ) : isDesktop ? (
+        <div className="rounded-md border border-gray-800">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Show Time</TableHead>
+                <TableHead>Band</TableHead>
+                <TableHead>Tech Working</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {schedules.map((schedule) => (
+                <TableRow key={schedule.id}>
+                  <TableCell>
+                    {format(parseISO(schedule.date), 'PPP')}
+                  </TableCell>
+                  <TableCell>{schedule.show_time}</TableCell>
+                  <TableCell>
+                    {schedule.is_band_override ? schedule.band_name : schedule.bands?.name}
+                  </TableCell>
+                  <TableCell>{schedule.tech_name || 'Not assigned'}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setEditingSchedule(schedule.id)
+                          setIsDialogOpen(true)
+                        }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setDeletingScheduleId(schedule.id)
+                          setShowConfirmDelete(true)
+                        }}
+                        className="text-red-500 hover:text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
           {schedules.map((schedule) => (
-            <TableRow key={schedule.id}>
-              <TableCell>
-                {format(formatLocalDate(schedule.date), "MMMM d, yyyy")}
-              </TableCell>
-              <TableCell>{schedule.bands?.name || schedule.band_name}</TableCell>
-              <TableCell>
-                {format(new Date(`2000-01-01T${schedule.show_time}`), "h:mm a")}
-              </TableCell>
-              <TableCell>{schedule.tech_name}</TableCell>
-              <TableCell className="text-right">
-                {schedule.tech_id === currentUserId && (
-                  <div className="flex justify-end space-x-2">
-                    <Button variant="outline" size="sm" onClick={() => handleEdit(schedule.id)}>
-                      <Edit className="h-4 w-4 mr-1" />
-                      Edit
-                    </Button>
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
-                      onClick={() => handleDeleteClick(schedule.id)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </Button>
-                  </div>
-                )}
-              </TableCell>
-            </TableRow>
+            <ScheduleCard
+              key={schedule.id}
+              schedule={schedule}
+              onEdit={(id) => {
+                setEditingSchedule(id)
+                setIsDialogOpen(true)
+              }}
+              onDelete={(id) => {
+                setDeletingScheduleId(id)
+                setShowConfirmDelete(true)
+              }}
+            />
           ))}
-        </TableBody>
-      </Table>
+        </div>
+      )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle>{editingSchedule ? 'Edit Event' : 'Add New Event'}</DialogTitle>
-            <DialogDescription>
-              {editingSchedule ? 'Edit the schedule details below.' : 'Fill in the schedule details below.'}
-            </DialogDescription>
+            <DialogTitle>{editingSchedule ? 'Edit Schedule' : 'Add New Schedule'}</DialogTitle>
           </DialogHeader>
           <ScheduleForm
             onSubmit={handleSubmit}
-            initialData={formInitialData}
+            initialData={currentSchedule ? {
+              date: currentSchedule.date,
+              show_time: currentSchedule.show_time,
+              tech_name: currentSchedule.tech_name || null,
+              band_id: currentSchedule.band_id,
+              band_name: currentSchedule.band_name,
+              is_band_override: currentSchedule.is_band_override
+            } : undefined}
+            isLoading={isLoading}
             onCancel={() => setIsDialogOpen(false)}
           />
         </DialogContent>
@@ -482,9 +582,41 @@ export function ScheduleTable() {
       <ConfirmDialog
         isOpen={showConfirmDelete}
         onClose={() => setShowConfirmDelete(false)}
-        title="Confirm Delete"
+        title="Delete Schedule"
         message="Are you sure you want to delete this schedule? This action cannot be undone."
-        onConfirm={handleDelete}
+        onConfirm={async () => {
+          if (deletingScheduleId) {
+            setIsLoading(true)
+            try {
+              const { error } = await supabase
+                .from('schedules')
+                .delete()
+                .eq('id', deletingScheduleId)
+
+              if (error) throw error
+
+              await fetchSchedules()
+              setShowConfirmDelete(false)
+              setDeletingScheduleId(null)
+              setFeedbackModal({
+                isOpen: true,
+                title: 'Success',
+                message: 'Schedule has been deleted successfully.',
+                type: 'success'
+              })
+            } catch (error: unknown) {
+              console.error('Error deleting schedule:', error)
+              setFeedbackModal({
+                isOpen: true,
+                title: 'Error',
+                message: 'Failed to delete schedule. Please try again.',
+                type: 'error'
+              })
+            } finally {
+              setIsLoading(false)
+            }
+          }
+        }}
       />
 
       <FeedbackModal
@@ -492,7 +624,7 @@ export function ScheduleTable() {
         onClose={() => setFeedbackModal(prev => ({ ...prev, isOpen: false }))}
         title={feedbackModal.title}
         message={feedbackModal.message}
-        type={feedbackModal.type as 'success' | 'error'}
+        type={feedbackModal.type}
       />
     </div>
   )

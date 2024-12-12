@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, forwardRef, useEffect } from "react"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import {
   Table,
   TableBody,
@@ -44,7 +45,7 @@ interface GigLogFormData {
   date: string
   band_id: string
   venue: string
-  notes: string | null
+  notes?: string | null
 }
 
 interface GigLogFormProps {
@@ -188,6 +189,64 @@ const GigLogForm = forwardRef<HTMLFormElement, GigLogFormProps>(({
 
 GigLogForm.displayName = 'GigLogForm'
 
+function GigLogCard({ gig, onEdit, onDelete, onView }: {
+  gig: GigLog
+  onEdit: (id: string) => void
+  onDelete: (id: string) => void
+  onView: (gig: GigLog) => void
+}) {
+  return (
+    <div className="bg-card rounded-lg p-4 space-y-4 border border-gray-800">
+      <div className="flex justify-between items-start">
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold">{gig.bands.name}</h3>
+          <p className="text-sm text-gray-400">
+            {format(new Date(gig.date), 'PPP')}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onView(gig)}
+            className="h-8 w-8"
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onEdit(gig.id)}
+            className="h-8 w-8"
+          >
+            <Edit className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onDelete(gig.id)}
+            className="h-8 w-8 text-red-500 hover:text-red-600"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      
+      <div className="text-sm">
+        <p className="text-gray-400">Venue</p>
+        <p>{gig.venue}</p>
+      </div>
+      
+      {gig.notes && (
+        <div className="text-sm">
+          <p className="text-gray-400">Notes</p>
+          <p className="line-clamp-2">{gig.notes}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function GigLogTable() {
   const [gigLogs, setGigLogs] = useState<GigLog[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -198,18 +257,19 @@ export function GigLogTable() {
   const [showConfirmDelete, setShowConfirmDelete] = useState(false)
   const [deletingGigId, setDeletingGigId] = useState<string | null>(null)
   const [feedbackModal, setFeedbackModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    type: 'success' | 'error';
+    isOpen: boolean
+    title: string
+    message: string
+    type: 'success' | 'error'
   }>({
     isOpen: false,
     title: '',
     message: '',
     type: 'success'
-  });
+  })
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
   const [viewingGig, setViewingGig] = useState<GigLog | null>(null)
+  const isDesktop = useMediaQuery("(min-width: 768px)")
   
   const supabase = createClientComponentClient()
 
@@ -391,62 +451,113 @@ export function GigLogTable() {
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">Gig Logs</h2>
-        <Button onClick={handleAdd} variant="orange">
-          <Plus className="h-4 w-4 mr-2" />
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <Button
+          onClick={() => {
+            setEditingGig(null)
+            setIsDialogOpen(true)
+          }}
+          className="bg-orange-600 hover:bg-orange-500 text-white"
+        >
+          <Plus className="mr-2 h-4 w-4" />
           Add New Gig Log
         </Button>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Band</TableHead>
-            <TableHead>Venue</TableHead>
-            <TableHead>Details</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+      {isLoading ? (
+        <div className="flex justify-center p-8">
+          <Icons.spinner className="h-6 w-6 animate-spin" />
+        </div>
+      ) : error ? (
+        <div className="text-center text-red-500 p-4">{error}</div>
+      ) : gigLogs.length === 0 ? (
+        <div className="text-center text-gray-400 p-8">
+          No gig logs found. Add your first gig!
+        </div>
+      ) : isDesktop ? (
+        <div className="rounded-md border border-gray-800">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Band</TableHead>
+                <TableHead>Venue</TableHead>
+                <TableHead>Notes</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {gigLogs.map((gig) => (
+                <TableRow key={gig.id}>
+                  <TableCell>{format(new Date(gig.date), 'PP')}</TableCell>
+                  <TableCell>{gig.bands.name}</TableCell>
+                  <TableCell>{gig.venue}</TableCell>
+                  <TableCell className="max-w-[300px]">
+                    <p className="truncate">{gig.notes}</p>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setViewingGig(gig)
+                          setIsViewModalOpen(true)
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setEditingGig(gig.id)
+                          setIsDialogOpen(true)
+                        }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setDeletingGigId(gig.id)
+                          setShowConfirmDelete(true)
+                        }}
+                        className="text-red-500 hover:text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
           {gigLogs.map((gig) => (
-            <TableRow key={gig.id}>
-              <TableCell>{format(formatLocalDate(gig.date), "MMMM d, yyyy")}</TableCell>
-              <TableCell>{gig.bands.name}</TableCell>
-              <TableCell>{gig.venue}</TableCell>
-              <TableCell>
-                <Button 
-                  variant="link" 
-                  className="p-0 h-auto font-normal text-blue-200 hover:text-blue-100"
-                  onClick={() => handleView(gig)}
-                >
-                  View Log
-                </Button>
-              </TableCell>
-              <TableCell className="text-right">
-                {gig.tech_id === currentUserId && (
-                  <div className="flex justify-end space-x-2">
-                    <Button variant="outline" size="sm" onClick={() => handleEdit(gig.id)}>
-                      <Edit className="h-4 w-4 mr-1" />
-                      Edit
-                    </Button>
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
-                      onClick={() => handleDeleteClick(gig.id)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </Button>
-                  </div>
-                )}
-              </TableCell>
-            </TableRow>
+            <GigLogCard
+              key={gig.id}
+              gig={gig}
+              onView={(gig) => {
+                setViewingGig(gig)
+                setIsViewModalOpen(true)
+              }}
+              onEdit={(id) => {
+                setEditingGig(id)
+                setIsDialogOpen(true)
+              }}
+              onDelete={(id) => {
+                setDeletingGigId(id)
+                setShowConfirmDelete(true)
+              }}
+            />
           ))}
-        </TableBody>
-      </Table>
+        </div>
+      )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>

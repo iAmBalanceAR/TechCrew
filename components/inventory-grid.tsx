@@ -235,11 +235,16 @@ export function InventoryGrid() {
   }, [])
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">Inventory</h2>
-        <Button onClick={handleAdd} variant="orange">
-          <Plus className="h-4 w-4 mr-2" />
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <Button
+          onClick={() => {
+            setEditingItem(null)
+            setIsDialogOpen(true)
+          }}
+          className="bg-orange-600 hover:bg-orange-500 text-white"
+        >
+          <Plus className="mr-2 h-4 w-4" />
           Add New Item
         </Button>
       </div>

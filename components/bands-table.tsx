@@ -20,13 +20,22 @@ import { cn } from "../lib/utils"
 import { CustomDialog } from "../components/ui/custom-dialog"
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { format } from "date-fns"
-import type { Band, BandFormData } from "@/types/index"
+import type { Band as BandType, BandFormData as BandFormDataType } from "@/types/index"
 import { FeedbackModal } from "@/components/ui/feedback-modal"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { useMediaQuery } from "@/hooks/use-media-query"
+
+interface Band extends BandType {
+  last_played: string | null
+}
+
+interface BandFormData extends BandFormDataType {
+  last_played?: string
+}
 
 interface BandFormProps {
   onSubmit: (data: BandFormData) => void
-  initialData?: BandFormData
+  initialData?: Partial<BandFormData>
   isLoading: boolean
   onCancel: () => void
 }
@@ -143,6 +152,86 @@ const BandForm = forwardRef<HTMLFormElement, BandFormProps>(({
 
 BandForm.displayName = 'BandForm'
 
+function BandCard({ band, onEdit, onDelete }: { 
+  band: Band
+  onEdit: (id: string) => void
+  onDelete: (id: string) => void 
+}) {
+  return (
+    <div className="bg-card rounded-lg p-4 space-y-4 border border-gray-800">
+      <div className="flex justify-between items-start">
+        <div>
+          <h3 className="text-lg font-semibold">{band.name}</h3>
+          <p className="text-sm text-gray-400">{band.home_location}</p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onEdit(band.id)}
+            className="h-8 w-8"
+          >
+            <Edit className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onDelete(band.id)}
+            className="h-8 w-8 text-red-500 hover:text-red-600"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        <div>
+          <p className="text-gray-400">Members</p>
+          <p>{band.members}</p>
+        </div>
+        <div>
+          <p className="text-gray-400">Last Played</p>
+          <p>{band.last_played ? format(new Date(band.last_played), 'PP') : 'N/A'}</p>
+        </div>
+      </div>
+      
+      {(band.notes || band.input_lists) && (
+        <div className="space-y-2 pt-2 border-t border-gray-800">
+          {band.notes && (
+            <div>
+              <p className="text-sm font-medium text-gray-400">Notes</p>
+              <p className="text-sm line-clamp-2">{band.notes}</p>
+            </div>
+          )}
+          {band.input_lists && (
+            <div>
+              <p className="text-sm font-medium text-gray-400">Input Lists</p>
+              <p className="text-sm line-clamp-2">{band.input_lists}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Add type definitions for the modal components
+interface ConfirmDialogProps {
+  isOpen: boolean
+  onClose: () => void
+  title: string
+  message: string
+  onConfirm: () => Promise<void>
+}
+
+interface FeedbackModalProps {
+  isOpen: boolean
+  onClose: () => void
+  title: string
+  message: string
+  type: 'success' | 'error'
+}
+
 export function BandsTable() {
   const [bands, setBands] = useState<Band[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -165,6 +254,7 @@ export function BandsTable() {
   });
   
   const supabase = createClientComponentClient()
+  const isDesktop = useMediaQuery("(min-width: 768px)")
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -317,70 +407,116 @@ export function BandsTable() {
     ? bands.find(band => band.id === editingBand)
     : undefined
 
-  if (isLoading) {
-    return <div className="flex justify-center p-4"><Icons.spinner className="h-6 w-6 animate-spin" /></div>
-  }
-
-  if (error) {
-    return <div className="text-red-500 text-center p-4">{error}</div>
-  }
-
   return (
-    <div>
-      <div className="flex justify-end mb-4">
-        <Button onClick={handleAdd} variant="orange">
-          <Plus className="h-4 w-4 mr-2" />
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <Button
+          onClick={() => {
+            setEditingBand(null)
+            setIsDialogOpen(true)
+          }}
+          className="bg-orange-600 hover:bg-orange-500 text-white"
+        >
+          <Plus className="mr-2 h-4 w-4" />
           Add New Band
         </Button>
       </div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Band Name</TableHead>
-            <TableHead>Home Location</TableHead>
-            <TableHead># of Members</TableHead>
-            <TableHead>Last Played</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+
+      {isLoading ? (
+        <div className="flex justify-center p-8">
+          <Icons.spinner className="h-6 w-6 animate-spin" />
+        </div>
+      ) : error ? (
+        <div className="text-center text-red-500 p-4">{error}</div>
+      ) : bands.length === 0 ? (
+        <div className="text-center text-gray-400 p-8">
+          No bands found. Add your first band!
+        </div>
+      ) : isDesktop ? (
+        <div className="rounded-md border border-gray-800">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Members</TableHead>
+                <TableHead>Last Played</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {bands.map((band) => (
+                <TableRow key={band.id}>
+                  <TableCell className="font-medium">{band.name}</TableCell>
+                  <TableCell>{band.home_location}</TableCell>
+                  <TableCell>{band.members}</TableCell>
+                  <TableCell>
+                    {band.last_played ? format(new Date(band.last_played), 'PP') : 'N/A'}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setEditingBand(band.id)
+                          setIsDialogOpen(true)
+                        }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setDeletingBandId(band.id)
+                          setShowConfirmDelete(true)
+                        }}
+                        className="text-red-500 hover:text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
           {bands.map((band) => (
-            <TableRow key={band.id}>
-              <TableCell>{band.name}</TableCell>
-              <TableCell>{band.home_location}</TableCell>
-              <TableCell>{band.members}</TableCell>
-              <TableCell>{band.last_played}</TableCell>
-              <TableCell className="text-right">
-                {band.created_by === currentUserId && (
-                  <div className="flex justify-end space-x-2">
-                    <Button variant="outline" size="sm" onClick={() => handleEdit(band.id)}>
-                      <Edit className="h-4 w-4 mr-1" />
-                      Edit
-                    </Button>
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
-                      onClick={() => handleDeleteClick(band.id)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </Button>
-                  </div>
-                )}
-              </TableCell>
-            </TableRow>
+            <BandCard
+              key={band.id}
+              band={band}
+              onEdit={(id) => {
+                setEditingBand(id)
+                setIsDialogOpen(true)
+              }}
+              onDelete={(id) => {
+                setDeletingBandId(id)
+                setShowConfirmDelete(true)
+              }}
+            />
           ))}
-        </TableBody>
-      </Table>
+        </div>
+      )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingBand ? 'Edit Band' : 'Add New Band'}</DialogTitle>
           </DialogHeader>
           <BandForm
             onSubmit={handleSubmit}
-            initialData={currentBand}
+            initialData={currentBand ? {
+              name: currentBand.name,
+              home_location: currentBand.home_location,
+              members: currentBand.members,
+              last_played: currentBand.last_played || undefined,
+              notes: currentBand.notes || undefined,
+              input_lists: currentBand.input_lists || undefined
+            } : undefined}
             isLoading={isLoading}
             onCancel={() => setIsDialogOpen(false)}
           />
@@ -390,9 +526,36 @@ export function BandsTable() {
       <ConfirmDialog
         isOpen={showConfirmDelete}
         onClose={() => setShowConfirmDelete(false)}
-        title="Confirm Delete"
+        title="Delete Band"
         message="Are you sure you want to delete this band? This action cannot be undone."
-        onConfirm={handleDelete}
+        onConfirm={async () => {
+          if (!deletingBandId) return Promise.resolve()
+          
+          setIsLoading(true)
+          try {
+            const { error } = await supabase
+              .from('bands')
+              .delete()
+              .eq('id', deletingBandId)
+
+            if (error) throw error
+            await fetchBands()
+            setShowConfirmDelete(false)
+            setDeletingBandId(null)
+            setFeedbackModal({
+              isOpen: true,
+              title: 'Success',
+              message: 'Band has been deleted successfully.',
+              type: 'success'
+            })
+          } catch (err: unknown) {
+            const error = err as Error
+            console.error('Error:', error)
+            setError(error.message)
+          } finally {
+            setIsLoading(false)
+          }
+        }}
       />
 
       <FeedbackModal
@@ -400,7 +563,7 @@ export function BandsTable() {
         onClose={() => setFeedbackModal(prev => ({ ...prev, isOpen: false }))}
         title={feedbackModal.title}
         message={feedbackModal.message}
-        type={feedbackModal.type as 'success' | 'error'}
+        type={feedbackModal.type}
       />
     </div>
   )

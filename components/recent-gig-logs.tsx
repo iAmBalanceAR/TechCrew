@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { format } from "date-fns"
 import { formatLocalDate } from "@/lib/utils"
 import { Icons } from "@/components/icons"
@@ -65,24 +64,21 @@ export function RecentGigLogs() {
 
   return (
     <div className="space-y-4">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Band</TableHead>
-            <TableHead>Venue</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {gigLogs.map((gig) => (
-            <TableRow key={gig.id}>
-              <TableCell>{format(formatLocalDate(gig.date), "MMM d, yyyy")}</TableCell>
-              <TableCell>{gig.bands.name}</TableCell>
-              <TableCell>{gig.venue}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <div className="space-y-3">
+        {gigLogs.map((gig) => (
+          <div key={gig.id} className="bg-black/20 rounded-lg p-3 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex-1">
+                <h3 className="font-medium text-sm">{gig.bands.name}</h3>
+                <p className="text-xs text-white/70">{gig.venue}</p>
+              </div>
+              <div className="text-sm text-white/90">
+                {format(formatLocalDate(gig.date), "MMM d, yyyy")}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
       <div className="flex justify-end">
         <Link 
           href="/gig-log" 

@@ -1,8 +1,6 @@
 "use client"
 
-import { useState, useEffect, SetStateAction } from "react"
-import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useState, useEffect } from "react"
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { Icons } from "@/components/icons"
 import Link from "next/link"
@@ -15,7 +13,6 @@ interface Band {
 
 export function BandListings() {
   const [bands, setBands] = useState<Band[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const supabase = createClientComponentClient()
@@ -27,6 +24,7 @@ export function BandListings() {
           .from('bands')
           .select('id, name, home_location, members')
           .order('name')
+          .limit(5)
 
         if (error) throw error
         setBands(data || [])
@@ -40,11 +38,6 @@ export function BandListings() {
 
     fetchBands()
   }, [supabase])
-
-  const filteredBands = bands.filter(band =>
-    band.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    band.home_location.toLowerCase().includes(searchTerm.toLowerCase())
-  )
 
   if (isLoading) {
     return <div className="flex justify-center p-4"><Icons.spinner className="h-6 w-6 animate-spin" /></div>
@@ -60,34 +53,15 @@ export function BandListings() {
 
   return (
     <div className="space-y-4">
-      <Input
-        type="search"
-        placeholder="Search bands..."
-        value={searchTerm}
-        onChange={(e: { target: { value: SetStateAction<string> } }) => setSearchTerm(e.target.value)}
-      />
-      <div className="grid grid-cols-2 gap-4">
-        {[0, 1].map((column) => (
-          <Table key={column}>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Members</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredBands
-                .filter((_, index) => index % 2 === column)
-                .map((band) => (
-                  <TableRow key={band.id}>
-                    <TableCell>{band.name}</TableCell>
-                    <TableCell>{band.home_location}</TableCell>
-                    <TableCell>{band.members}</TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
+      <div className="space-y-3">
+        {bands.map((band) => (
+          <div key={band.id} className="bg-black/20 rounded-lg p-3 space-y-1">
+            <h3 className="font-medium text-sm">{band.name}</h3>
+            <div className="flex items-center justify-between text-xs text-white/70">
+              <span>{band.home_location}</span>
+              <span>{band.members} members</span>
+            </div>
+          </div>
         ))}
       </div>
       <div className="flex justify-end">

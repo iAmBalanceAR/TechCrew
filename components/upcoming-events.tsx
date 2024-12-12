@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { format } from "date-fns"
 import { Icons } from "@/components/icons"
 import Link from "next/link"
@@ -71,24 +70,23 @@ export function UpcomingEvents() {
 
   return (
     <div className="space-y-4">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Band</TableHead>
-            <TableHead><div className="text-center">Tech Working</div></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {events.map((event) => (
-            <TableRow key={event.id}>
-              <TableCell>{format(formatLocalDate(event.date), "MMM d, yyyy")}</TableCell>
-              <TableCell>{event.bands?.name || event.band_name}</TableCell>
-              <TableCell><div className="text-center">{event.tech_name}</div></TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <div className="space-y-3">
+        {events.map((event) => (
+          <div key={event.id} className="bg-black/20 rounded-lg p-3 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex-1">
+                <h3 className="font-medium text-sm">{event.bands?.name || event.band_name}</h3>
+                {event.tech_name && (
+                  <p className="text-xs text-white/70">Tech: {event.tech_name}</p>
+                )}
+              </div>
+              <div className="text-sm text-white/90">
+                {format(formatLocalDate(event.date), "MMM d, yyyy")}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
       <div className="flex justify-end">
         <Link 
           href="/schedule" 
